@@ -138,6 +138,11 @@ def search():
 
     print(end-start)
 
+def contained(words, text):
+    for x in words:
+        if x in text: return True
+    return False
+
 def load_data():
     def print_text():
         ctxt = open("classes.txt", "w")
@@ -155,6 +160,16 @@ def load_data():
 
         ctxt.close()
     
+    def legit_course_count(std):
+        i = 0
+        for s in std.courses:
+            c = None
+            for ci in courses:
+                if ci.cid == s: c = ci.name
+            if not contained(["homeroom","lunch", "senior experience", "projects", "study hall"], c.lower()):
+                i += 1
+        return i
+
     students_file = open("students", "rb")
     students = pickle.load(students_file)
     students_file.close()
@@ -167,17 +182,33 @@ def load_data():
     courses = pickle.load(courses_file)
     courses_file.close()
 
+    # Compute number of students in each grade/dropped BCA
     # grade_count = [0, 0, 0, 0]
+    # drop_count = [0, 0, 0, 0]
 
-    # print("Dropped Students:")
     # for s in students:
-    #     if len(s.courses) > 0 and s.grade != None:
-    #         grade_count[s.grade - 1] += 1
-    #     else:
-    #         if len(s.courses) == 0:
-    #             print(s.name)
-
+    #     if s.grade != None:
+    #         if len(s.courses) > 0:
+    #             grade_count[s.grade - 1] += 1
+    #         elif len(s.courses) == 0:
+    #             drop_count[s.grade - 1] += 1
     # print(grade_count)
+    # print(drop_count)
+
+    # Rank by number of current courses on Schoology
+    # cutoff = 0
+
+    # for s in sorted(students, key=legit_course_count, reverse=True):
+    #     print(s.name,legit_course_count(s),s.grade)
+    #     cutoff += 1
+    #     if cutoff >= 261: break
+
+    # Rank by length of name
+    # for s in sorted(students, key=lambda x: len(x.name), reverse=True):
+    #     print(s.name,s.grade)
+    #     cutoff += 1
+    #     if cutoff >= 261: break
+
 
     
 
