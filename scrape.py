@@ -1,9 +1,14 @@
 import re
 import time
 import pickle
+from student import Student
+from teacher import Teacher
+from course import Course
 from bs4 import BeautifulSoup
 
 from robobrowser import RoboBrowser
+
+DELAY = 0.25
 
 br = RoboBrowser()
 br.open("https://bca.schoology.com/login/ldap?destination=home&school=11897239")
@@ -12,211 +17,171 @@ form['mail'] = ''  # Username
 form['pass'] = ''  # Password
 br.submit_form(form)
 
-# course_id_dict = {}
-# student_dict = {}
+students = []
+teachers = []
+courses = []
 
-
-def get_name_and_courses(user_id):
-    """
-    Returns 2-tuple: (name, courses) where:
-        name = a string containing user's name
-        courses = a list of course names of user
-    """
+def scrape_all(cutoff=-1):
+    current_url = "https://bca.schoology.com/enrollments/edit/members/group/2233228305/ajax?ss=&p="
+    page = 1
     soup = BeautifulSoup(br.session.get(
-        "https://bca.schoology.com/user/"+str(user_id)+"/courses/list").text, 'html.parser')
+        current_url+str(page)).text, 'html.parser')
+    i = 1
+    while (len(soup.select("tbody")) > 0):
+        for user in soup.select("tbody")[0].select("tr"):
+            time.sleep(DELAY)
+            cur_id = int(user.get("id"))
+            if cur_id in Student.student_ids or cur_id in Teacher.teacher_ids:
+                continue
+            name = user.find("a").get("title")
+            courses_html = br.session.get(
+                "https://bca.schoology.com/user/"+str(cur_id)+"/courses/list").text
+            user_html = br.session.get(
+                "https://bca.schoology.com/user/"+str(cur_id)+"/info").text
+            user_page = BeautifulSoup(user_html, 'html.parser')
+            if len(user_page.select(".content-top-wrapper > p")) == 1:
+                teacher = Teacher(cur_id, name, courses_html, courses)
+                # print(teacher)
+                teachers.append(teacher)
+            else:
+                student = Student(cur_id, name, courses_html,
+                                  user_html, courses)
+                # print(student)
+                students.append(student)
+            if cutoff > 0:
+                if i >= cutoff:
+                    break
+                else:
+                    i += 1
+        if cutoff > 0 and i >= cutoff:
+            break
+        page += 1
+        soup = BeautifulSoup(br.session.get(
+            current_url+str(page)).text, 'html.parser')
 
-    item_names = soup.select('.course-item-right')
-    courses = []
-    for item in item_names:
-        course_link = item.select('a')[0].attrs['href']
-        course_id = int(course_link[8:])
-        course_name = item.get_text()
-        if course_id not in course_id_dict.keys():
-            course_id_dict[course_id] = course_name
-        courses.append(course_id)
-
-    soup2 = BeautifulSoup(br.session.get(
-        "https://bca.schoology.com/user/"+str(user_id)+"/info").text, 'html.parser')
-
-    name = soup2.select("#center-top .page-title")[0].get_text()
-    if (len(soup2.select("span.admin-val.email")) > 0):
-        email = soup2.select("span.admin-val.email")[0].get_text()
-        if "20@bergen.org" not in email:
-            return None
-    return name, courses
-
-
-def isStudent(user_id):
-    """
-    Verifies if given user_id is a current senior
-    """
-    soup = BeautifulSoup(br.session.get(
-        "https://bca.schoology.com/user/"+str(user_id)+"/info").text, 'html.parser')
-    if (len(soup.select("span.admin-val.email")) > 0):
-        email = soup.select("span.admin-val.email")[0].get_text()
-        if "20@bergen.org" not in email:
-            return False
-    return True
-
-
-def print_tuple(user_tuple):
-    print("Name: "+user_tuple[0])
-    print("Current classes:")
-    for course in user_tuple[1]:
-        print(course)
-
-
-def get_senior_ids():
-    """
-    Gets all senior user_ids from the BCA-2020 group page on Schoology, excludes administrators/teachers.
-    Also includes students who have dropped out.
-    """
-    ids = []
+def scrape_seniors(cutoff=-1):
     current_url = "https://bca.schoology.com/enrollments/edit/members/group/772763961/ajax?ss=&p="
     page = 1
     soup = BeautifulSoup(br.session.get(
         current_url+str(page)).text, 'html.parser')
+    i = 1
     while (len(soup.select("tbody")) > 0):
         for user in soup.select("tbody")[0].select("tr"):
-            time.sleep(0.25)
+            time.sleep(DELAY)
             cur_id = int(user.get("id"))
-            if (isStudent(cur_id)):
-                ids.append(cur_id)
+            if cur_id in Student.student_ids or cur_id in Teacher.teacher_ids:
+                continue
+            name = user.find("a").get("title")
+            courses_html = br.session.get(
+                "https://bca.schoology.com/user/"+str(cur_id)+"/courses/list").text
+            user_html = br.session.get(
+                "https://bca.schoology.com/user/"+str(cur_id)+"/info").text
+            user_page = BeautifulSoup(user_html, 'html.parser')
+            if len(user_page.select(".content-top-wrapper > p")) == 1:
+                teacher = Teacher(cur_id, name, courses_html, courses)
+                # print(teacher)
+                teachers.append(teacher)
+            else:
+                student = Student(cur_id, name, courses_html,
+                                  user_html, courses, True)
+                # print(student)
+                students.append(student)
+            if cutoff > 0:
+                if i >= cutoff:
+                    break
+                else:
+                    i += 1
+        if cutoff > 0 and i >= cutoff:
+            break
         page += 1
         soup = BeautifulSoup(br.session.get(
             current_url+str(page)).text, 'html.parser')
-    return ids
 
-
-def str_cmp(a):
-    return course_id_dict[a]
-
-
-def generate_classes_list():
-    """
-    Generates list of senior students for every possible class,
-    stores it in classes.txt.
-    """
-    course_dict = {}
-    for uid in uids:
-        student = student_dict[uid]
-        name = student[0]
-        courses = student[1]
-        for c in courses:
-            if c not in course_dict.keys():
-                course_dict[c] = {name}
-            else:
-                course_dict[c].add(name)
-
-    cur_file = open("classes.txt", "w")
-    for c in sorted(course_dict, key=str_cmp):
-        cur_file.write(course_id_dict[c]+"\n\n")
-        cur_file.write("Teachers:\n")
-        if c not in course_teacher_dict.keys():
-            cur_file.write("UNKNOWN\n")
-        else:
-            for t in course_teacher_dict[c]:
-                cur_file.write(teacher_dict[t][0]+"\n")
-        cur_file.write("\nStudents:\n")
-        for k in course_dict[c]:
-            cur_file.write(k+"\n")
-        cur_file.write("\n")
-
-# outfile = open("stds_and_classes","wb")
-
-# pickle.dump(student_dict, outfile)
-# outfile.close()
-
-
-# outfile2 = open("class_ids","wb")
-
-# pickle.dump(course_id_dict, outfile2)
-# outfile2.close()
-
-# course_id_dict = {}
-
-def get_teachers():
+def scrape_faculty():
     """
     Gets all teacher user_ids, and courses they teach.
     """
     current_url = "https://bca.schoology.com/school/11897239/faculty?page="
 
     for page in range(0, 13):
-        soup = BeautifulSoup(br.session.get(current_url+str(page)).text, 'html.parser')
-        
+        soup = BeautifulSoup(br.session.get(
+            current_url+str(page)).text, 'html.parser')
+
         for teacher in soup.select(".faculty-name"):
-            time.sleep(0.25)
+            time.sleep(DELAY)
             tid = int(teacher.find("a").attrs['href'][6:])
+            if tid in Teacher.teacher_ids:
+                continue
             name = teacher.get_text()
-            soup2 = BeautifulSoup(br.session.get(
-                "https://bca.schoology.com/user/"+str(tid)+"/courses/list").text, 'html.parser')
-            item_names = soup2.select('.course-item-right')
-            print(name)
-            if len(item_names) > 0:
-                courses = []
-                for item in item_names:
-                    course_link = item.select('a')[0].attrs['href']
-                    course_id = int(course_link[8:])
-                    course_name = item.select('a')[0].get_text()
-                    if course_id not in course_id_dict.keys():
-                        course_id_dict[course_id] = course_name
-                    courses.append(course_id)
-                # teacher_dict[tid] = (name, courses)
-            
-prefile = open("user_ids.txt", "r")
-uids = []
-for line in prefile:
-    uid = int(line)
-    uids.append(uid)
-prefile.close()
+            course_html = br.session.get(
+                "https://bca.schoology.com/user/"+str(tid)+"/courses/list").text
+            t = Teacher(tid, name, course_html, courses)
+            teachers.append(t)
 
-infile = open("stds_and_classes", "rb")
-student_dict = pickle.load(infile)
-infile.close()
+def search():
+    start = time.time()
+    scrape_faculty()
+    scrape_seniors()
+    scrape_all()
 
-infile2 = open("class_ids", "rb")
-course_id_dict = pickle.load(infile2)
-infile2.close()
+    f1 = open("students", "wb")
+    pickle.dump(students, f1)
+    f1.close()
+    f2 = open("teachers", "wb")
+    pickle.dump(teachers, f2)
+    f2.close()
+    f3 = open("courses", "wb")
+    pickle.dump(courses, f3)
+    f3.close()
 
-# outfile = open("class-ids","wb")
-# pickle.dump(course_id_dict, outfile)
-# outfile.close()
+    end = time.time()
 
-infile3 = open("teacher_dict", "rb")
-teacher_dict = pickle.load(infile3)
-infile3.close()
+    print(end-start)
 
-# for uid in uids:
-#     time.sleep(0.3)
-#     student_dict[uid]=get_name_and_courses(uid)
+def load_data():
+    def print_text():
+        ctxt = open("classes.txt", "w")
 
-# outfile = open("class_ids","wb")
+        for co in sorted(courses, key=lambda x: x.name):
+            if "Lunch" not in co.name and "Study Hall" not in co.name and "Senior Experience" not in co.name and "Projects" not in co.name:
+                ctxt.write(co.name+"\n")
+                ctxt.write("Teachers:\n")
+                for t in co.teachers:
+                    ctxt.write(t.name+"\n")
+                ctxt.write("Students:\n")
+                for s in co.students:
+                    ctxt.write(s.name+"\n")
+                ctxt.write("\n")
 
-# pickle.dump(course_id_dict, outfile)
-# outfile.close()
+        ctxt.close()
+    
+    students_file = open("students", "rb")
+    students = pickle.load(students_file)
+    students_file.close()
 
+    teachers_file = open("teachers", "rb")
+    teachers = pickle.load(teachers_file)
+    teachers_file.close()
 
-# for k in course_id_dict:
-#     print(k,course_id_dict[k])
-# print(course_id_dict)
+    courses_file = open("courses", "rb")
+    courses = pickle.load(courses_file)
+    courses_file.close()
 
-# for k in student_dict:
-#     for l in student_dict[k][1]:
-#         if l not in course_id_dict.keys(): print(student_dict[k][0])
+    # grade_count = [0, 0, 0, 0]
 
-course_teacher_dict = {}
-for k in teacher_dict:
-    courses = teacher_dict[k][1]
-    for c in courses:
-        if c not in course_teacher_dict.keys():
-            course_teacher_dict[c] = [k]
-        else:
-            course_teacher_dict[c].append(k)
+    # print("Dropped Students:")
+    # for s in students:
+    #     if len(s.courses) > 0 and s.grade != None:
+    #         grade_count[s.grade - 1] += 1
+    #     else:
+    #         if len(s.courses) == 0:
+    #             print(s.name)
 
-generate_classes_list()
+    # print(grade_count)
 
-# for k in course_teacher_dict:
-#     print(course_id_dict[k])
-#     for t in course_teacher_dict[k]:
-#         print(teacher_dict[t][0])
-#     print()
+    
+
+def main():
+    load_data()
+
+main()

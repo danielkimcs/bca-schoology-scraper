@@ -7,3 +7,8 @@ stds_and_classes
 teacher_dict
 teachers
 user_ids.txt
+__pycache__/course.cpython-37.pyc
+__pycache__/student.cpython-37.pyc
+__pycache__/teacher.cpython-37.pyc
+courses
+students
